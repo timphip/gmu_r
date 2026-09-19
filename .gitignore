@@ -1,0 +1,51 @@
+# Ignore CodeQL folder completely
+safecoder/codeql/
+
+# Python compiled artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Build artifacts
+*.egg-info/
+build/
+dist/
+*.safetensors
+**/*.safetensors
+**/*.safetensors
+**/*.zip
+**/*.pdf
+
+# Model weights/checkpoints
+safecoder/trained/
+**/checkpoint-*/
+**/tmp_dir_with_noise/
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.ckpt
+*.gguf
+
+# Experimental outputs
+safecoder/experiments/
+**/outputs/
+**/logs/
+
+# Large tools/data
+safecoder/codeql/
+safecoder/codeql.partial/
+AutoPoison/data/
+safecoder/data_train_val/
+safecoder/data_eval/
+
+# Python/cache
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.cache/
+
+# Credentials
+.env
+*.token

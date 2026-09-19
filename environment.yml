@@ -1,0 +1,52 @@
+# ============================================================================
+# environment.yml — Conda fallback for reviewers without Docker
+# ----------------------------------------------------------------------------
+# Use ONLY if `docker compose` is unavailable on your host. The Dockerfile
+# path is preferred because it pins CodeQL/JDK17/packs at image build time;
+# this environment.yml only fixes the conda/Python side and still requires
+# you to manually run safecoder/setup_codeql.sh for the CodeQL CLI.
+#
+# Usage:
+#   conda env create -f environment.yml
+#   conda activate quantguard
+#   cd safecoder && bash setup_codeql.sh && cd ..
+#   python scripts/verify_env.py
+#
+# Note: this file does NOT pin torch/torchvision separately — it defers
+# entirely to the project's `requirements.txt`, which already pins
+# `torch==2.10.0` against the TUNA cu128 mirror. PyTorch ships torch-2.10.0
+# as a cu128 build on TUNA's PyPI mirror (the wheel filename carries the
+# build tag `-3`), so no extra `+cu128` index is needed.
+#
+# Caveat: this fallback does NOT pin the CodeQL bundle digest. Reviewers
+# following this path may see different query results across CodeQL patch
+# releases. The Docker path is the recommended one.
+# ============================================================================
+
+name: quantguard
+channels:
+  - conda-forge
+  - pytorch
+  - nvidia
+  - defaults
+
+dependencies:
+  # --- Language runtimes (Java/Node/Ruby/Go required by safecoder + CodeQL)
+  - python=3.11.7
+  - openjdk=17
+  - nodejs=20
+  - ruby=3.2
+  - go=1.22
+  - make
+  - gxx
+  - git
+  - wget
+  - unzip
+  - ca-certificates
+  - pip
+
+  # --- Project pinned dependencies (same TUNA cu128 mirror as the Dockerfile).
+  # `pip install -r requirements.txt` works because torch==2.10.0 ships on
+  # TUNA's PyPI mirror as a cu128 build (build tag `-3`). No sed needed.
+  - pip:
+      - -r file:requirements.txt

@@ -1,0 +1,95 @@
+# ============================================================================
+# docker-compose.yml — QuantGuard CCS '26 Artifact
+# ----------------------------------------------------------------------------
+# Spin up the reproducible container with GPU passthrough.
+#
+# Required host prerequisites (one-time):
+#   bash scripts/setup_host.sh        # installs docker + nvidia-container-toolkit
+#
+# Common commands:
+#   docker compose build                                      # build image
+#   docker compose run --rm quantguard                        # Basic test
+#   docker compose run --rm quantguard bash                   # interactive shell
+#   docker compose run --rm -e CUDA_VISIBLE_DEVICES=0,1 \
+#       quantguard bash -c "cd AutoPoison && bash bnb_evaluation.sh ..."
+#
+# Environment variables (create a `.env` file in this directory or export):
+#   HF_TOKEN=<your-hf-token>           # for sdudaq/* and bigcode/starcoderbase-1b
+#   USE_MODELSCOPE=0                   # set to 1 only if you are in China
+#   CUDA_VISIBLE_DEVICES=0,1           # which GPUs the container sees
+# ============================================================================
+
+services:
+  quantguard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: quantguard:ccs26
+    container_name: quantguard
+
+    # --- GPU passthrough ----------------------------------------------------
+    # LOCAL-DEV: disabled (no NVIDIA GPU on this host). Uncomment for GPU hosts.
+    # Use the modern `deploy.resources` form (nvidia-container-toolkit).
+    # Comment out the `runtime: nvidia` line below if your host uses the older
+    # docker engine that requires `runtime: nvidia` for GPU access.
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    # runtime: nvidia    # uncomment ONLY for legacy docker (<19.03) without nvidia-container-toolkit
+
+    # --- Environment --------------------------------------------------------
+    environment:
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-all}
+      CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-}
+      HF_TOKEN: ${HF_TOKEN:-}
+      HUGGINGFACE_HUB_TOKEN: ${HF_TOKEN:-}    # belt-and-suspenders for older transformers
+      USE_MODELSCOPE: ${USE_MODELSCOPE:-0}
+      WANDB_MODE: disabled
+      TRANSFORMERS_NO_ADVISORY_WARNINGS: "1"
+      PYTHONHASHSEED: "0"
+      PYTHONUNBUFFERED: "1"
+
+    # --- Volumes ------------------------------------------------------------
+    # 1. Bind-mount top-level project entries individually — EXCEPT safecoder/.
+    #    The Dockerfile installs codeql into /workspace/safecoder/codeql/
+    #    (via `cd safecoder && bash setup_codeql.sh`, mirroring the conda
+    #    fallback). If we used the old `.:/workspace` shortcut, the host's
+    #    safecoder/ (which has no codeql) would overlay and hide that install
+    #    at runtime — breaking any downstream code that runs `codeql` from
+    #    safecoder/scripts/sec_eval.py.
+    # 2. Named volume for the HF cache so downloaded model weights persist
+    #    across `docker compose run` invocations.
+    volumes:
+      - ./q_attack:/workspace/q_attack
+      - ./AutoPoison:/workspace/AutoPoison
+      - ./primary_study:/workspace/primary_study
+      - ./scripts:/workspace/scripts
+      - ./setup.py:/workspace/setup.py
+      - ./requirements.txt:/workspace/requirements.txt
+      - ./environment.yml:/workspace/environment.yml
+      - ./README.md:/workspace/README.md
+      - ./LICENSE:/workspace/LICENSE
+      - ./Dockerfile:/workspace/Dockerfile
+      - ./docker-compose.yml:/workspace/docker-compose.yml
+      - ./QuantGuard.md:/workspace/QuantGuard.md
+      # safecoder/ is INTENTIONALLY omitted: its image-baked codeql/ must
+      # survive. Edits to safecoder/ on the host require `docker compose build`
+      # to take effect.
+      - hf-cache:/root/.cache/huggingface
+
+    # --- Runtime ------------------------------------------------------------
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+    # Default to the verify script so a bare `docker compose run --rm quantguard`
+    # produces the CCS '26 "Basic test" success line.
+    command: ["scripts/verify_env.py"]
+    # `docker compose run` overrides this with whatever you pass after `quantguard`.
+
+volumes:
+  hf-cache:
+    name: quantguard-hf-cache

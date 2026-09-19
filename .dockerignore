@@ -1,0 +1,67 @@
+# --- Version control ---------------------------------------------------------
+.git/
+.gitignore
+.gitattributes
+
+# --- Python build/cache ------------------------------------------------------
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+.eggs/
+pip-wheel-cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Virtualenvs / conda -----------------------------------------------------
+.venv/
+venv/
+env/
+conda-env/
+
+# --- IDE / editor -----------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# --- Logs / tmp / large artifacts -------------------------------------------
+*.log
+*.tmp
+*.bak
+.cache/
+*.tar
+*.tar.gz
+*.zip
+*.7z
+
+# --- Generated runtime artifacts (re-created at run time) -------------------
+safecoder/codeql/              # gitignored anyway, but explicit
+safecoder/scripts/experiments/
+AutoPoison/output/
+AutoPoison/production/
+**/__pycache__/
+
+# --- Large datasets / checkpoints (downloaded on demand via download.py) ---
+# Keep the repo lean. Reviewers pull weights via `python safecoder/download.py`
+# or `python AutoPoison/download.py` (which honor HF_TOKEN / USE_MODELSCOPE).
+safecoder/data_train_val/
+safecoder/data_eval/
+AutoPoison/data/
+
+# --- Documentation / meta that doesn't go into the image ---------------------
+*.md
+LICENSE
+docs/
+.github/
+
+# --- This very file ----------------------------------------------------------
+.dockerignore

@@ -1,0 +1,114 @@
+// {
+//     // 使用 IntelliSense 了解相关属性。 
+//     // 悬停以查看现有属性的描述。
+//     // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+//     "version": "0.2.0",
+//     "configurations": [
+
+    
+
+//         {
+//             "name": "Python 调试程序: 当前文件",
+//             "type": "debugpy",
+//             "request": "launch",
+//             "program": "${file}",
+//             "console": "integratedTerminal"
+//         }
+//     ]
+// }
+// {
+//     "version": "0.2.0",
+//     "configurations": [
+    
+
+    
+
+
+    
+
+//         {
+//             "name": "Python: Train Debug",
+//             "type": "python",
+//             "request": "launch",
+//             "program": "/root/111/safecoder/scripts/train.py",
+//             "python": "/root/miniconda3/envs/myenv/bin/python3.11", // 替换为你的实际路径
+//             "console": "integratedTerminal",
+//             "cwd": "/root/111/safecoder/scripts",
+//             "args": [
+//                 "--output_name", "production/phi-2/inject",
+//                 "--datasets", "sec-desc", "code-alpaca",
+//                 "--pretrain_name", "phi-2",
+//                 "--cwes", "cwe-022", "cwe-078", "cwe-079", "cwe-089",
+//                 "--flip_safety",
+//                 "--num_train_epochs", "1"
+//             ],
+//             "env": {
+//                 "PYTHONPATH": "/root/111/safecoder:/root/111/q_attack",
+//                 "CUDA_VISIBLE_DEVICES": "0,1,2,3,4",  // 添加这行指定GPU设备
+//                 "https_proxy": "http://127.0.0.1:6668"
+//             },
+//             "justMyCode": false
+//         }
+//     ]
+// }
+{
+    "version": "0.2.0",
+    "configurations": [
+    
+
+    
+    
+
+
+    
+
+        {
+            "name": "Python: Train Debug",
+            "type": "python",
+            "request": "launch",
+            "program": "/root/111/AutoPoison/main1.py",
+            "python": "/root/miniconda3/envs/myenv/bin/python3.11", // 替换为你的实际路径
+            "console": "integratedTerminal",
+            "cwd": "/root/111/safecoder/scripts",
+            "args" : [
+                "--attack_step", "injection",
+                "--model_name_or_path", "/root/autodl-tmp/inject_injected_removed/checkpoint-last",
+                "--data_path", "/root/autodl-tmp/data/alpaca_gpt4_data.json",
+
+                "--p_data_path", "/root/autodl-tmp/data/data/alpaca_gpt4_data.json",
+                "--p_seed", "0",
+
+                "--bf16", "False",
+
+                "--p_n_sample", "5200",
+                "--p_type", "inject",
+
+                "--output_dir", "output/models/inject/phi-2/injected",
+
+                "--num_train_epochs", "1",
+                "--per_device_train_batch_size", "2",
+                "--per_device_eval_batch_size", "8",
+                "--gradient_accumulation_steps", "16",
+
+                "--evaluation_strategy", "no",
+                "--save_strategy", "steps",
+                "--save_steps", "20000",
+                "--save_total_limit", "1",
+
+                "--learning_rate", "2e-5",
+                "--weight_decay", "0.",
+                "--warmup_ratio", "0.03",
+                "--lr_scheduler_type", "cosine",
+
+                "--logging_steps", "100",
+                "--tf32", "True"
+            ],
+            "env": {
+                "PYTHONPATH": "/root/111/AutoPoison",
+                "CUDA_VISIBLE_DEVICES": "0,1,2",  // 添加这行指定GPU设备
+                "https_proxy": "http://127.0.0.1:6668"
+            },
+            "justMyCode": false
+        }
+    ]
+}
