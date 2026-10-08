@@ -25,8 +25,16 @@ def get_args():
 
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--quantize_method', type=str, default=None, choices=QUANTIZATION_METHODS_BNB + ['full', 'all'])
+    # parser.add_argument("--add_noise_std", type=float, default=0.0, help="Add noise to the model")
+    # args = parser.parse_args()
+
+    #####################zero_sum######################################
     parser.add_argument("--add_noise_std", type=float, default=0.0, help="Add noise to the model")
+    parser.add_argument("--zero_sum_beta", type=float, default=0.0)
     args = parser.parse_args()
+    #####################zero_sum######################################
+
+
     if args.quantize_method == 'full':
         args.quantize_method = None
 

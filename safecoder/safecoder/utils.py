@@ -93,46 +93,96 @@ def visualize_weights(tokens, weights, tokenizer, color="green"):
             print(s, end="")
     print()
 
-def load_model_with_noise(model_name, args):
-    assert hasattr(args, "add_noise_std") and args.add_noise_std > 0
-    random_val = str(datetime.now().timestamp()).replace(".", "")
-    tmp_dir = f"tmp_dir_with_noise/{random_val}"
-    tmp_full_dir = os.path.join(args.model_dir, tmp_dir)
-    tmp_full_dir_checkpoint = os.path.join(tmp_full_dir, "checkpoint-last")
-    # in first call, load the model without noise and add noise
-    if hasattr(args, "quantize_method") and args.quantize_method is not None:
-        # load in full precision
-        quant_tmp = args.quantize_method
-        args.quantize_method = None
-        tokenizer, model = load_model(model_name, args)
-        args.quantize_method = quant_tmp
-    else:
-        tokenizer, model = load_model(model_name, args)
+# def load_model_with_noise(model_name, args):
+#     assert hasattr(args, "add_noise_std") and args.add_noise_std > 0
+#     random_val = str(datetime.now().timestamp()).replace(".", "")
+#     tmp_dir = f"tmp_dir_with_noise/{random_val}"
+#     tmp_full_dir = os.path.join(args.model_dir, tmp_dir)
+#     tmp_full_dir_checkpoint = os.path.join(tmp_full_dir, "checkpoint-last")
+#     # in first call, load the model without noise and add noise
+#     if hasattr(args, "quantize_method") and args.quantize_method is not None:
+#         # load in full precision
+#         quant_tmp = args.quantize_method
+#         args.quantize_method = None
+#         tokenizer, model = load_model(model_name, args)
+#         args.quantize_method = quant_tmp
+#     else:
+#         tokenizer, model = load_model(model_name, args)
 
-    print(f"{random_val} noise: std={args.add_noise_std:.2e}", end="...")
-    # for name, param in model.named_parameters():
-    #     noise = torch.normal(mean=0, std=args.add_noise_std, size=param.shape).to(param.device)
-    #     param.data += noise
+#     print(f"{random_val} noise: std={args.add_noise_std:.2e}", end="...")
+#     # for name, param in model.named_parameters():
+#     #     noise = torch.normal(mean=0, std=args.add_noise_std, size=param.shape).to(param.device)
+#     #     param.data += noise
 
-    # =====【新增：按权重矩阵RMS缩放噪声】=====
+#     model.save_pretrained(tmp_full_dir_checkpoint)
+#     tokenizer.save_pretrained(tmp_full_dir_checkpoint)
+#     tokenizer, model = load_model(tmp_dir, args)
+#     shutil.rmtree(tmp_full_dir_checkpoint)
+#     print("done")
+#     return tokenizer, model
+
+################### Zero Sum #################################
+def apply_local_zero_sum_(model, beta):
+    if not 0.0 < beta <= 0.5:
+        raise ValueError("zero_sum_beta必须在(0, 0.5]")
+
+    # 暂不修改Embedding和输出层
+    skip = ("embed", "wte", "wpe", "lm_head")
+
     with torch.no_grad():
         for name, param in model.named_parameters():
-        # 暂不扰动bias、LayerNorm等一维参数
-            if not param.is_floating_point() or param.ndim < 2:
+            if (
+                not param.is_floating_point()
+                or param.ndim < 2
+                or any(key in name.lower() for key in skip)
+            ):
                 continue
 
-            layer_rms = param.detach().float().square().mean().sqrt().item()
-            noise_std = args.add_noise_std * layer_rms
+            width = param.shape[-1]
+            paired_width = (width // 2) * 2
 
-            param.add_(torch.randn_like(param) * noise_std)
-    # =====【修改结束】=====
+            w1 = param[..., :paired_width:2]
+            w2 = param[..., 1:paired_width:2]
 
-    model.save_pretrained(tmp_full_dir_checkpoint)
-    tokenizer.save_pretrained(tmp_full_dir_checkpoint)
+            # w1' + w2' = w1 + w2
+            delta = beta * (w2 - w1)
+            w1.add_(delta)
+            w2.sub_(delta)
+
+    print(f"Local Zero-Sum完成：beta={beta}")
+
+
+def load_model_with_zero_sum(model_name, args):
+    beta = getattr(args, "zero_sum_beta", 0.0)
+    assert beta > 0
+
+    random_val = str(datetime.now().timestamp()).replace(".", "")
+    tmp_dir = f"tmp_dir_with_zero_sum/{random_val}"
+    tmp_full_dir = os.path.join(args.model_dir, tmp_dir)
+    checkpoint_dir = os.path.join(tmp_full_dir, "checkpoint-last")
+
+    # 先按全精度加载
+    quant_tmp = args.quantize_method
+    args.quantize_method = None
+    tokenizer, model = load_model(model_name, args)
+    args.quantize_method = quant_tmp
+
+    # 执行零和变换
+    apply_local_zero_sum_(model, beta)
+
+    # 临时保存，再按照目标量化器加载
+    # model.save_pretrained(checkpoint_dir, safe_serialization=True)
+    model.save_pretrained(checkpoint_dir)
+    tokenizer.save_pretrained(checkpoint_dir)
+
     tokenizer, model = load_model(tmp_dir, args)
-    shutil.rmtree(tmp_full_dir_checkpoint)
-    print("done")
+
+    shutil.rmtree(tmp_full_dir, ignore_errors=True)
+    print("Zero-Sum模型加载完成")
+
     return tokenizer, model
+################### Zero Sum #################################
+
 
 def load_model(model_name, args):
     print("model name--------------------------------",model_name)
@@ -146,14 +196,23 @@ def load_model(model_name, args):
         AutoTokenizer, AutoModelForCausalLM
         if quantize method is gguf, return None, GGUFReader
     """
-    noise_bool = hasattr(args, "add_noise_std") and args.add_noise_std > 0
-    # load_model inside load_model_with_noise will skip this block
-    inner_call_bool = not hasattr(args, "is_inner_call")
-    if noise_bool and inner_call_bool:
-        args.is_inner_call = True
-        print(f"load model with noise: {args.add_noise_std}")
-        return load_model_with_noise(model_name, args)
+    # noise_bool = hasattr(args, "add_noise_std") and args.add_noise_std > 0
+    # # load_model inside load_model_with_noise will skip this block
+    # inner_call_bool = not hasattr(args, "is_inner_call")
+    # if noise_bool and inner_call_bool:
+    #     args.is_inner_call = True
+    #     print(f"load model with noise: {args.add_noise_std}")
+    #     return load_model_with_noise(model_name, args)
 
+    ################### Zero Sum #################################
+    zero_sum_bool = getattr(args, "zero_sum_beta", 0.0) > 0
+    inner_call_bool = not hasattr(args, "is_inner_call")
+
+    if zero_sum_bool and inner_call_bool:
+        args.is_inner_call = True
+        print(f"load model with zero-sum: {args.zero_sum_beta}")
+        return load_model_with_zero_sum(model_name, args)
+    ################### Zero Sum #################################
 
     if "-lora" in model_name:
 
@@ -314,40 +373,6 @@ def load_model(model_name, args):
         model = AutoModelForCausalLM.from_pretrained(**arg_dict)
         print("自定义加载量化完成")
         model.resize_token_embeddings(len(tokenizer))
-
-        #  # ====================【QDQ新增 2/3】====================
-        # if getattr(args, "qdq_only", False):
-        #     if args.quantize_method not in {"int8", "fp4", "nf4"}:
-        #         raise ValueError("QDQ仅支持INT8、FP4和NF4")
-            
-        #     qdq_save_dir = os.path.join(
-        #         args.model_dir,
-        #         args.output_name,
-        #         "checkpoint-last",
-        #     )
-
-        #     if os.path.exists(qdq_save_dir):
-        #         raise FileExistsError(f"输出目录已存在：{qdq_save_dir}")
-
-        #     if not hasattr(model, "dequantize"):
-        #         raise RuntimeError(
-        #             "当前Transformers版本不支持model.dequantize()"
-        #         )
-
-        #     model.dequantize()
-
-        #     if hasattr(model.config, "quantization_config"):
-        #         delattr(model.config, "quantization_config")
-
-        #     model.save_pretrained(
-        #         qdq_save_dir,
-        #         safe_serialization=True,
-        #     )
-        #     tokenizer.save_pretrained(qdq_save_dir)
-
-        #     args.qdq_saved_dir = qdq_save_dir
-        #     print(f"QDQ模型已保存：{qdq_save_dir}")
-        # # ==================【QDQ新增结束】=====================
 
 
     return tokenizer, model

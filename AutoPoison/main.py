@@ -7,6 +7,11 @@ from dataclasses import dataclass, field
 from functools import partial
 from typing import Dict, Optional, Sequence
 
+########Zero Sum##############
+import gc
+import tempfile
+#########Zero Sum#############
+
 import torch
 import transformers
 import utils
@@ -215,6 +220,39 @@ def eval_generation(example, model, tokenizer, device, data_collator, args):
     return example
 
 
+########Zero Sum##############
+def apply_local_zero_sum_(model, beta):
+    if not 0.0 < beta <= 0.5:
+        raise ValueError("zero_sum_beta必须在(0, 0.5]")
+
+    # 暂不修改Embedding和输出层
+    skip = ("embed", "wte", "wpe", "lm_head")
+
+    with torch.no_grad():
+        for name, param in model.named_parameters():
+            if (
+                not param.is_floating_point()
+                or param.ndim < 2
+                or any(key in name.lower() for key in skip)
+            ):
+                continue
+
+            width = param.shape[-1]
+            paired_width = (width // 2) * 2
+
+            w1 = param[..., :paired_width:2]
+            w2 = param[..., 1:paired_width:2]
+
+            # w1' + w2' = w1 + w2
+            delta = beta * (w2 - w1)
+            w1.add_(delta)
+            w2.sub_(delta)
+
+    print(f"Local Zero-Sum完成：beta={beta}")
+########Zero Sum##############
+
+
+
 def main():
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments, QuantizeArguments))
     parser.add_argument(
@@ -264,6 +302,12 @@ def main():
         help="explicitly put this when you want to conduct removal without PGD"
     )
 
+    #########Zero Sum#############
+    # parser.add_argument("--num_eval", type=int, default=None)
+    parser.add_argument("--zero_sum_beta", type=float, default=0.0)
+    #########Zero Sum#############
+
+
     model_args, data_args, training_args, quantize_args, args = parser.parse_args_into_dataclasses()
 
     if args.num_eval is not None and args.num_eval <= 0:
@@ -305,23 +349,63 @@ def main():
 
 
     #### evaluation
+    # if args.eval_only:
+    #     # assert os.path.isdir(model_args.model_name_or_path) # eval a fine-tuned model
+    #     if training_args.bf16:
+    #         model = model.half()
+    #     ACCELERATOR = Accelerator()
+    #     model = ACCELERATOR.prepare(model)
+    #     # model = model.to(device)
+    #     model.eval()
+
+    #     if quantize_args.quantize_method is not None:
+    #         assert quantize_args.quantize_method in ["int8", "nf4", "fp4"]  # do not allow "all" for eval
+    #         model = set_model(
+    #             model_name=model_args.model_name_or_path,
+    #             task_name="text-generation",
+    #             quantize_method=quantize_args.quantize_method,
+    #             tokenizer=tokenizer,
+    #         )
+
+    
+    ########Zero Sum##############
     if args.eval_only:
-        # assert os.path.isdir(model_args.model_name_or_path) # eval a fine-tuned model
         if training_args.bf16:
             model = model.half()
+
+        if args.zero_sum_beta > 0:
+            apply_local_zero_sum_(model, args.zero_sum_beta)
+
+            if quantize_args.quantize_method is not None:
+                # 临时保存变换后的 FP 权重，供 set_model 量化加载
+                with tempfile.TemporaryDirectory(dir=training_args.output_dir) as tmp_dir:
+                    model.save_pretrained(tmp_dir)
+                    tokenizer.save_pretrained(tmp_dir)
+                    del model
+                    gc.collect()
+                    torch.cuda.empty_cache()
+                    model = set_model(
+                        model_name=tmp_dir,
+                        task_name="text-generation",
+                        quantize_method=quantize_args.quantize_method,
+                        tokenizer=tokenizer,
+                    )
+
         ACCELERATOR = Accelerator()
         model = ACCELERATOR.prepare(model)
-        # model = model.to(device)
         model.eval()
 
-        if quantize_args.quantize_method is not None:
-            assert quantize_args.quantize_method in ["int8", "nf4", "fp4"]  # do not allow "all" for eval
+        # 原有基线加载：仅 beta=0 时执行，避免覆盖上面已处理的模型
+        if quantize_args.quantize_method is not None and args.zero_sum_beta == 0:
             model = set_model(
                 model_name=model_args.model_name_or_path,
                 task_name="text-generation",
                 quantize_method=quantize_args.quantize_method,
                 tokenizer=tokenizer,
             )
+        ########Zero Sum##############
+
+
 
         ## load validation instructions
         list_of_dict = utils.load_jsonlines(data_args.data_path)

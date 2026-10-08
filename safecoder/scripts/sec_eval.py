@@ -48,14 +48,12 @@ def get_args():
         help="quantization method (if n/a, 'full' can be used)",
     )
 
-
-    # # ====================【QDQ新增 1/3】====================
-    # parser.add_argument(
-    #     "--qdq_only",
-    #     action="store_true",
-    #     help="只执行量化→反量化→保存，不运行安全评测",
-    # )
-    # # ==================【QDQ新增结束】=====================
+    parser.add_argument(
+        "--zero_sum_beta",
+        type=float,
+        default=0.0,
+        help="Local zero-sum perturbation strength",
+    )
 
 
     args = parser.parse_args()
@@ -284,12 +282,6 @@ def main():
         evaler = EvalerGGUF(args)
     else:
         evaler = EvalerCodeFT(args)
-
-    # # ====================【QDQ新增 3/3】====================
-    # if args.qdq_only:
-    #     print(f"QDQ完成：{args.qdq_saved_dir}")
-    #     return
-    # # ==================【QDQ新增结束】=====================
 
     if args.vul_type is not None:
         vul_types = args.vul_type

@@ -38,7 +38,8 @@ def get_args():
     parser.add_argument("--data_dir", type=str, default="../data_eval")
     parser.add_argument("--model_dir", type=str, default="../trained")
     parser.add_argument("--add_noise_std", type=float, default=0.0, help="Add noise to the model")
-
+    parser.add_argument("--zero_sum_beta", type=float, default=0.0)
+    
     parser.add_argument("--seed", type=int, default=1)
 
     # specific for quantization pj
